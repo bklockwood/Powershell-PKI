@@ -68,7 +68,7 @@ function Show-SigningStatus
                 $Embeddedsigcount ++
                 Write-Progress -ID 1 `
                     -Activity "Signature status of $($dirwalk.count) files on $path" `
-                    -Status "$ProcessedCoun files Processed: t Embedded: $Embeddedsigcount, Catalog: $Catalogsigcount, No signature: $Nosigcount" `
+                    -Status "$ProcessedCount files processed. Embedded: $Embeddedsigcount, Catalog: $Catalogsigcount, No signature: $Nosigcount" `
                     -PercentComplete (( $ProcessedCount / $($dirwalk.count))*100)
             } else {
                 $signtool = .\signtool.exe verify /a /pa /ms /sl /q $item.fullname 2>&1
