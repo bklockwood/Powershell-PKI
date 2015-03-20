@@ -4,10 +4,7 @@ BKL 20150207
 I'd like to replace the signtool.exe with native calls to WinVerifyTrust (or its .NET equivalent)
 This may come in handy for that: http://poshcode.org/4806
 here's a good C example: http://goo.gl/uJnmn9, http://goo.gl/2tKzRq
-A recent version of this script is at http://pastebin.com/cJkdfuYk
-#>
 
-<#
  Some informative links:
 Authenticode signing http://goo.gl/hdjQtB
 some files are catalog signed, not Authenticode signed. http://goo.gl/peOVL4, http://goo.gl/uYywCF, 
@@ -58,29 +55,31 @@ function Show-SigningStatus
         $ProcessedCount = 0
         Write-Progress -ID 1 -Activity "Signature status of files on $path"
         $include = @("*.cab","*.cat","*.ctl","*.dll","*.exe","*.ocx","*.com")
+        #now skipping WinSxS folder because a) it's protected and b) I don't understand how signing works there
         $dirwalk = get-childitem -path $Path -File -Include $include -Exclude *winsxs* -Recurse -ErrorAction ignore |
             where {$_.fullname -notlike '*winsxs*'}
         foreach ($item in $dirwalk) {
             $ProcessedCount ++
+            $itemprops = "$($item.fullname)  $($item.versioninfo.companyname)"
             if ( $(Get-AuthenticodeSignature $($item.fullname)).Status -eq "Valid" ) {
                 if ($ShowFiles -eq "Signed" -or $ShowFiles -eq "All") {
-                    Write-Host "Authenticode signed:   $($item.fullname)"
+                    Write-Host "EMBsigned: $itemprops"
                 }
                 $Embeddedsigcount ++
                 Write-Progress -ID 1 `
                     -Activity "Signature status of $($dirwalk.count) files on $path" `
-                    -Status "Embedded: $Embeddedsigcount, Catalog: $Catalogsigcount, No signature: $Nosigcount" `
+                    -Status "$ProcessedCoun files Processed: t Embedded: $Embeddedsigcount, Catalog: $Catalogsigcount, No signature: $Nosigcount" `
                     -PercentComplete (( $ProcessedCount / $($dirwalk.count))*100)
             } else {
                 $signtool = .\signtool.exe verify /a /pa /ms /sl /q $item.fullname 2>&1
                 if ($signtool.exception) {
                     if ($ShowFiles -eq "Unsigned" -or $ShowFiles -eq "All") {
-                        Write-Host "NOT signed:            $($item.fullname)"
+                        Write-Host "NO sig: $itemprops"
                     }
                     $Nosigcount ++
                 } else {
                     if ($ShowFiles -eq "Signed" -or $ShowFiles -eq "All") {
-                        Write-Host "Catalog signed:        $($item.fullname)"
+                        Write-Host "CATsigned: $itemprops"
                     }
                     $Catalogsigcount ++
                 }
@@ -105,6 +104,10 @@ Write-Host "In this context, 'executable' means any file with extension *.cab,*.
 Write-Host " "
 
 
-Show-SigningStatus "C:\Program Files" 
-Show-SigningStatus "C:\Program Files (x86)" 
-Show-SigningStatus "C:\Windows" -ShowFiles unsigned
+#Show-SigningStatus "C:\Program Files" 
+#Show-SigningStatus "C:\Program Files (x86)" 
+#Show-SigningStatus "C:\Windows" -ShowFiles unsigned
+Show-SigningStatus "c:\users\test" -ShowFiles all
+Show-SigningStatus "c:\windows\system32" -ShowFiles unsigned
+
+
