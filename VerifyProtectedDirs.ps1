@@ -94,20 +94,32 @@ function Show-SigningStatus
 
 }
 
+# BEGINNING OF SCRIPT
+
+if ( ![Environment]::Is64BitProcess) {
+    #If PS is running 32bit, c:\windows\system32 is a redirection of c:\windows\syswow64.
+    #signtool can't seem to follow the redirection and gives 'file not found' error which 
+    #screws up the script results. So: don't allow this script as a 32bit process.
+    #Thanks to Garrett Serack who set me straight on this.
+    Write-Warning "You're running from a 32-bit Powershell process. This script needs a 64-bit process."
+    break
+}
+
 if ( !(Test-Path -path .\signtool.exe) ) {
     Write-Warning "This script requires signtool.exe from the Windows SDK. http://goo.gl/0ylLtC"
     Write-Warning "You need signtool.exe in directory you run this script from. Ending script."
     break
 }
 
+
+
 Write-Host "In this context, 'executable' means any file with extension *.cab,*.cat,*.ctl,*.dll,*.exe,*.com, or *.ocx"
 Write-Host " "
 
 
-#Show-SigningStatus "C:\Program Files" 
-#Show-SigningStatus "C:\Program Files (x86)" 
-#Show-SigningStatus "C:\Windows" -ShowFiles unsigned
-Show-SigningStatus "c:\users\test" -ShowFiles all
-Show-SigningStatus "c:\windows\system32" -ShowFiles unsigned
+Show-SigningStatus "C:\Program Files" -ShowFiles unsigned
+Show-SigningStatus "C:\Program Files (x86)" -ShowFiles unsigned
+Show-SigningStatus "C:\Windows" -ShowFiles unsigned
+
 
 
