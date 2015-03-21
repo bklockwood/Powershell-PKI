@@ -4,7 +4,6 @@ BKL 20150207
 I'd like to replace the signtool.exe with native calls to WinVerifyTrust (or its .NET equivalent)
 This may come in handy for that: http://poshcode.org/4806
 here's a good C example: http://goo.gl/uJnmn9, http://goo.gl/2tKzRq
-
  Some informative links:
 Authenticode signing http://goo.gl/hdjQtB
 some files are catalog signed, not Authenticode signed. http://goo.gl/peOVL4, http://goo.gl/uYywCF, 
@@ -24,9 +23,7 @@ Why Isn't PowerShell.exe Authenticode Signed? http://goo.gl/mu4mmM
    Deliver a summary report.
 .EXAMPLE
    Show-SigningStatus -Path c:\Windows\System32 -Showfiles None
-
    will report:
-
    Results for c:\windows\system32 :
     Total files:         9044
     Embedded signatures: 5043
@@ -54,13 +51,19 @@ function Show-SigningStatus
         $Nosigcount = 0
         $ProcessedCount = 0
         Write-Progress -ID 1 -Activity "Signature status of files on $path"
+        Write-Host "Results for $Path :"
         $include = @("*.cab","*.cat","*.ctl","*.dll","*.exe","*.ocx","*.com")
         #now skipping WinSxS folder because a) it's protected and b) I don't understand how signing works there
         $dirwalk = get-childitem -path $Path -File -Include $include -Exclude *winsxs* -Recurse -ErrorAction ignore |
             where {$_.fullname -notlike '*winsxs*'}
         foreach ($item in $dirwalk) {
             $ProcessedCount ++
-            $itemprops = "$($item.fullname)  $($item.versioninfo.companyname)"
+            if ( $($item.versioninfo.companyname.length) -eq 0) {
+                $companyname = "(no company found)"
+            } else {
+                $companyname = $item.versioninfo.companyname
+            }
+            $itemprops = "$($item.fullname)  $companyname"
             if ( $(Get-AuthenticodeSignature $($item.fullname)).Status -eq "Valid" ) {
                 if ($ShowFiles -eq "Signed" -or $ShowFiles -eq "All") {
                     Write-Host "EMBsigned: $itemprops"
@@ -85,7 +88,6 @@ function Show-SigningStatus
                 }
             }
         }
-        Write-Host "Results for $Path :"
         Write-Host "Total files:         $ProcessedCount"
         Write-Host "Embedded signatures: $Embeddedsigcount"
         Write-Host "Catalog signatures:  $Catalogsigcount"
@@ -111,15 +113,9 @@ if ( !(Test-Path -path .\signtool.exe) ) {
     break
 }
 
-
-
 Write-Host "In this context, 'executable' means any file with extension *.cab,*.cat,*.ctl,*.dll,*.exe,*.com, or *.ocx"
 Write-Host " "
-
 
 Show-SigningStatus "C:\Program Files" -ShowFiles unsigned
 Show-SigningStatus "C:\Program Files (x86)" -ShowFiles unsigned
 Show-SigningStatus "C:\Windows" -ShowFiles unsigned
-
-
-
