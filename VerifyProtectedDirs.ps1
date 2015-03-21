@@ -2,7 +2,7 @@
  Simple script to count files that don't have Authenticode sigs in Windows protected areas.
 BKL 20150207
 I'd like to replace the signtool.exe with native calls to WinVerifyTrust (or its .NET equivalent)
-This may come in handy for that: http://poshcode.org/4806
+This may come in handy for that: http://poshcode.org/4806 (no help actually)
 here's a good C example: http://goo.gl/uJnmn9, http://goo.gl/2tKzRq
  Some informative links:
 Authenticode signing http://goo.gl/hdjQtB
@@ -74,10 +74,12 @@ function Show-SigningStatus
                     -Status "$ProcessedCount files processed. Embedded: $Embeddedsigcount, Catalog: $Catalogsigcount, No signature: $Nosigcount" `
                     -PercentComplete (( $ProcessedCount / $($dirwalk.count))*100)
             } else {
-                $signtool = .\signtool.exe verify /a /pa /ms /sl /q $item.fullname 2>&1
-                if ($signtool.exception) {
+                $sigcheck = Use-Sigcheck $($item.fullname)
+                if ( !$($sigcheck.ValidSignature)) {
                     if ($ShowFiles -eq "Unsigned" -or $ShowFiles -eq "All") {
-                        Write-Host "NO sig: $itemprops"
+                        $VTresult = Use-Sigcheck $($item.fullname) -VirusTotal
+                        Write-Host "NO sig: $($item.fullname)"
+                        Write-Host "  Rating: $($VTresult.rating) Analysis: $($VTresult.Analysis)"
                     }
                     $Nosigcount ++
                 } else {
@@ -94,6 +96,73 @@ function Show-SigningStatus
         Write-Host "No signature:        $Nosigcount"
     }
 
+}
+
+<#
+.Synopsis
+   Uses sigcheck.exe (from http://goo.gl/kj15hK) to check code-signing status of a file.
+   Optionally, submit the file's hash to VirusTotal for analysis.
+.PARAMETER Path
+ Path to the file to be checked.
+
+.PARAMETER VirusTotal
+ If specified, checks the file with VirusTotal.
+
+.EXAMPLE
+ Use-sigcheck c:\windows\regedit.exe
+ returns:
+
+ ValidSignature Rating Analysis                                                                                       
+ -------------- ------ --------                                       
+           True                                                                              
+.EXAMPLE
+ Use-sigcheck c:\windows\regedit.exe -VirusTotal
+ returns:
+ 
+ ValidSignature Rating Analysis                                                                                       
+--------------- ------ --------                                                                                       
+          True 0|57    https://www.virustotal.com/file/dce18e2279073ba64a6f35d17120fdca9a4902faef0c99cd96a5d673209e132f/analysis/
+.EXAMPLE
+ (Use-Sigcheck c:\somepath\badfile.exe).ValidSignature
+ returns:
+
+ False
+   
+#>
+function Use-Sigcheck
+{
+    [CmdletBinding()]
+    Param
+    (
+        [Parameter(Mandatory=$true,ValueFromPipelineByPropertyName=$true,Position=0)]
+        $Path,
+        [Parameter(Mandatory=$false,ValueFromPipelineByPropertyName=$false,Position=1)]
+        [switch]$VirusTotal
+    )
+
+    Process
+    {
+        $signed = $false
+        if ($VirusTotal) {
+            $sigcheck = .\sigcheck.exe -c -vt -q $Path
+            $sigcheckarray = $sigcheck -split ","
+            if ($sigcheckarray[12] -eq """Signed""") {$signed = $true}
+            $vtrating = $sigcheckarray[20] -replace '"', ""
+            $vtlink = $sigcheckarray[21] -replace '"', ""
+        } else {
+            $sigcheck = .\sigcheck.exe -c -q $Path
+            $sigcheckarray = $sigcheck -split ","
+            if ($sigcheckarray[10] -eq """Signed""") {$signed = $true}
+        }
+
+        $outputprops = [ordered]@{'ValidSignature'=$signed;
+            'Rating'=$vtrating;
+            'Analysis'=$vtlink
+        }
+        $output = New-Object -TypeName PSObject -Property $outputprops
+        $output
+
+    }
 }
 
 # BEGINNING OF SCRIPT
@@ -119,3 +188,4 @@ Write-Host " "
 Show-SigningStatus "C:\Program Files" -ShowFiles unsigned
 Show-SigningStatus "C:\Program Files (x86)" -ShowFiles unsigned
 Show-SigningStatus "C:\Windows" -ShowFiles unsigned
+#Show-SigningStatus "C:\users\Bryan\documents\WindowsPowerShell\CheckFileSigs" -ShowFiles all
