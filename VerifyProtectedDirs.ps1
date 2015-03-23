@@ -2,7 +2,7 @@
  Simple script to count files that don't have Authenticode sigs in Windows protected areas.
 BKL 20150207
 I'd like to replace the signtool.exe with native calls to WinVerifyTrust (or its .NET equivalent)
-This may come in handy for that: http://poshcode.org/4806
+This may come in handy for that: http://poshcode.org/4806 (no help actually)
 here's a good C example: http://goo.gl/uJnmn9, http://goo.gl/2tKzRq
  Some informative links:
 Authenticode signing http://goo.gl/hdjQtB
@@ -52,10 +52,10 @@ function Show-SigningStatus
         $ProcessedCount = 0
         Write-Progress -ID 1 -Activity "Signature status of files on $path"
         Write-Host "Results for $Path :"
-        $include = @("*.cab","*.cat","*.ctl","*.dll","*.exe","*.ocx","*.com")
-        #now skipping WinSxS folder because a) it's protected and b) I don't understand how signing works there
+        $include = @("*.cat","*.ctl","*.dll","*.exe","*.ocx","*.com")
+        #now skipping WinSxS and windows\assembly because a) they're protected and b) I don't understand how signing works there
         $dirwalk = get-childitem -path $Path -File -Include $include -Exclude *winsxs* -Recurse -ErrorAction ignore |
-            where {$_.fullname -notlike '*winsxs*'}
+            where {$_.fullname -notlike '*winsxs*' -and $_.fullname -notlike "*windows\assembly*"}
         foreach ($item in $dirwalk) {
             $ProcessedCount ++
             if ( $($item.versioninfo.companyname.length) -eq 0) {
@@ -74,10 +74,13 @@ function Show-SigningStatus
                     -Status "$ProcessedCount files processed. Embedded: $Embeddedsigcount, Catalog: $Catalogsigcount, No signature: $Nosigcount" `
                     -PercentComplete (( $ProcessedCount / $($dirwalk.count))*100)
             } else {
-                $signtool = .\signtool.exe verify /a /pa /ms /sl /q $item.fullname 2>&1
-                if ($signtool.exception) {
+                $sigcheck = Use-Sigcheck $($item.fullname)
+                if ( !$($sigcheck.ValidSignature)) {
                     if ($ShowFiles -eq "Unsigned" -or $ShowFiles -eq "All") {
-                        Write-Host "NO sig: $itemprops"
+                        $VTresult = Use-Sigcheck $($item.fullname) -VirusTotal
+                        Write-Host "NO sig: $($item.fullname)"
+                        out-file -filepath .\nosigs.txt -Append -InputObject $($item.fullname)
+                        Write-Host "  Rating: $($VTresult.rating) Analysis: $($VTresult.Analysis)"
                     }
                     $Nosigcount ++
                 } else {
@@ -96,6 +99,76 @@ function Show-SigningStatus
 
 }
 
+<#
+.Synopsis
+   Uses sigcheck.exe (from http://goo.gl/kj15hK) to check code-signing status of a file.
+   Optionally, submit the file's hash to VirusTotal for analysis.
+.PARAMETER Path
+ Path to the file to be checked.
+
+.PARAMETER VirusTotal
+ If specified, checks the file with VirusTotal.
+
+.EXAMPLE
+ Use-sigcheck c:\windows\regedit.exe
+ returns:
+
+ ValidSignature Rating Analysis                                                                                       
+ -------------- ------ --------                                       
+           True                                                                              
+.EXAMPLE
+ Use-sigcheck c:\windows\regedit.exe -VirusTotal
+ returns:
+ 
+ ValidSignature Rating Analysis                                                                                       
+--------------- ------ --------                                                                                       
+          True 0|57    https://www.virustotal.com/file/dce18e2279073ba64a6f35d17120fdca9a4902faef0c99cd96a5d673209e132f/analysis/
+.EXAMPLE
+ (Use-Sigcheck c:\somepath\badfile.exe).ValidSignature
+ returns:
+
+ False
+   
+#>
+function Use-Sigcheck
+{
+    [CmdletBinding()]
+    Param
+    (
+        [Parameter(Mandatory=$true,ValueFromPipelineByPropertyName=$true,Position=0)]
+        $Path,
+        [Parameter(Mandatory=$false,ValueFromPipelineByPropertyName=$false,Position=1)]
+        [switch]$VirusTotal
+    )
+
+    Process
+    {
+        $signed = $false
+        if ($VirusTotal) {
+            #signtool csv output tab delimited, check cirustotal, quiet
+            $sigcheck = .\sigcheck.exe -ct -vt -q $Path
+            #split into an array, on tab delims
+            $sigcheckarray = $sigcheck -split "\t"
+            if ($sigcheckarray[12] -eq """Signed""") {$signed = $true}
+            #get the values we want, remove quotes
+            $vtrating = $sigcheckarray[20] -replace '"', ""
+            $vtlink = $sigcheckarray[21] -replace '"', ""
+        } else {
+            $sigcheck = .\sigcheck.exe -ct -q $Path
+            $sigcheckarray = $sigcheck -split "\t"
+            if ($sigcheckarray[10] -eq """Signed""") {$signed = $true}
+        }
+
+        $outputprops = [ordered]@{'ValidSignature'=$signed;
+            'Rating'=$vtrating;
+            'Analysis'=$vtlink
+        }
+        $output = New-Object -TypeName PSObject -Property $outputprops
+        $output
+
+    }
+}
+
 # BEGINNING OF SCRIPT
 
 if ( ![Environment]::Is64BitProcess) {
@@ -108,14 +181,11 @@ if ( ![Environment]::Is64BitProcess) {
 }
 
 if ( !(Test-Path -path .\signtool.exe) ) {
-    Write-Warning "This script requires signtool.exe from the Windows SDK. http://goo.gl/0ylLtC"
-    Write-Warning "You need signtool.exe in directory you run this script from. Ending script."
+    Write-Warning "This script requires sigcheck.exe from sysinternals: http://goo.gl/kj15hK"
+    Write-Warning "You need sigcheck.exe in your current working directory. Ending script."
     break
 }
 
-Write-Host "In this context, 'executable' means any file with extension *.cab,*.cat,*.ctl,*.dll,*.exe,*.com, or *.ocx"
-Write-Host " "
-
-Show-SigningStatus "C:\Program Files" -ShowFiles unsigned
-Show-SigningStatus "C:\Program Files (x86)" -ShowFiles unsigned
+Show-SigningStatus "C:\Program Files" 
+Show-SigningStatus "C:\Program Files (x86)" 
 Show-SigningStatus "C:\Windows" -ShowFiles unsigned
