@@ -52,10 +52,10 @@ function Show-SigningStatus
         $ProcessedCount = 0
         Write-Progress -ID 1 -Activity "Signature status of files on $path"
         Write-Host "Results for $Path :"
-        $include = @("*.cab","*.cat","*.ctl","*.dll","*.exe","*.ocx","*.com")
-        #now skipping WinSxS folder because a) it's protected and b) I don't understand how signing works there
+        $include = @("*.cat","*.ctl","*.dll","*.exe","*.ocx","*.com")
+        #now skipping WinSxS and windows\assembly because a) they're protected and b) I don't understand how signing works there
         $dirwalk = get-childitem -path $Path -File -Include $include -Exclude *winsxs* -Recurse -ErrorAction ignore |
-            where {$_.fullname -notlike '*winsxs*'}
+            where {$_.fullname -notlike '*winsxs*' -and $_.fullname -notlike "*windows\assembly*"}
         foreach ($item in $dirwalk) {
             $ProcessedCount ++
             if ( $($item.versioninfo.companyname.length) -eq 0) {
@@ -79,6 +79,7 @@ function Show-SigningStatus
                     if ($ShowFiles -eq "Unsigned" -or $ShowFiles -eq "All") {
                         $VTresult = Use-Sigcheck $($item.fullname) -VirusTotal
                         Write-Host "NO sig: $($item.fullname)"
+                        out-file -filepath .\nosigs.txt -Append -InputObject $($item.fullname)
                         Write-Host "  Rating: $($VTresult.rating) Analysis: $($VTresult.Analysis)"
                     }
                     $Nosigcount ++
@@ -144,14 +145,17 @@ function Use-Sigcheck
     {
         $signed = $false
         if ($VirusTotal) {
-            $sigcheck = .\sigcheck.exe -c -vt -q $Path
-            $sigcheckarray = $sigcheck -split ","
+            #signtool csv output tab delimited, check cirustotal, quiet
+            $sigcheck = .\sigcheck.exe -ct -vt -q $Path
+            #split into an array, on tab delims
+            $sigcheckarray = $sigcheck -split "\t"
             if ($sigcheckarray[12] -eq """Signed""") {$signed = $true}
+            #get the values we want, remove quotes
             $vtrating = $sigcheckarray[20] -replace '"', ""
             $vtlink = $sigcheckarray[21] -replace '"', ""
         } else {
-            $sigcheck = .\sigcheck.exe -c -q $Path
-            $sigcheckarray = $sigcheck -split ","
+            $sigcheck = .\sigcheck.exe -ct -q $Path
+            $sigcheckarray = $sigcheck -split "\t"
             if ($sigcheckarray[10] -eq """Signed""") {$signed = $true}
         }
 
@@ -177,15 +181,11 @@ if ( ![Environment]::Is64BitProcess) {
 }
 
 if ( !(Test-Path -path .\signtool.exe) ) {
-    Write-Warning "This script requires signtool.exe from the Windows SDK. http://goo.gl/0ylLtC"
-    Write-Warning "You need signtool.exe in directory you run this script from. Ending script."
+    Write-Warning "This script requires sigcheck.exe from sysinternals: http://goo.gl/kj15hK"
+    Write-Warning "You need sigcheck.exe in your current working directory. Ending script."
     break
 }
 
-Write-Host "In this context, 'executable' means any file with extension *.cab,*.cat,*.ctl,*.dll,*.exe,*.com, or *.ocx"
-Write-Host " "
-
-Show-SigningStatus "C:\Program Files" -ShowFiles unsigned
-Show-SigningStatus "C:\Program Files (x86)" -ShowFiles unsigned
+Show-SigningStatus "C:\Program Files" 
+Show-SigningStatus "C:\Program Files (x86)" 
 Show-SigningStatus "C:\Windows" -ShowFiles unsigned
-#Show-SigningStatus "C:\users\Bryan\documents\WindowsPowerShell\CheckFileSigs" -ShowFiles all
