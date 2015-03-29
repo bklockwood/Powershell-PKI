@@ -1,4 +1,3 @@
-# Powershell
 Scripts for checking your certificate store, and code-sgning status of executables.
 
 * **Audit-TrustedRootCA.ps1** Checks Windows certificate stores for possibly untrustworthy certs. [Read more.] (http://www.itcookbook.net/blog/auditingyourrootcertificates)
